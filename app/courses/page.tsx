@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import CourseModal from '@/components/CourseModal';
@@ -23,7 +23,8 @@ interface User {
   enrolled_courses?: string[];
 }
 
-export default function CoursesPage() {
+// Component that uses useSearchParams
+function CoursesContent() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -436,5 +437,20 @@ export default function CoursesPage() {
         />
       )}
     </div>
+  );
+}
+
+// Main component with Suspense boundary
+export default function CoursesPage() {
+  return (
+    <Suspense 
+      fallback={
+        <div className="min-h-screen bg-[#282828] text-[#ebdbb2] flex items-center justify-center">
+          <div className="text-2xl">Loading courses...</div>
+        </div>
+      }
+    >
+      <CoursesContent />
+    </Suspense>
   );
 }
