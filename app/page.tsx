@@ -28,6 +28,12 @@ export default function Home() {
                 Browse Courses
               </button>
             </Link>
+
+            <Link href="/test-users">
+              <button className="bg-[#cc241d] hover:bg-[#fb4934] text-[#282828] font-semibold py-3 px-8 rounded-lg transition-colors duration-200 min-w-[150px]">
+                Test Logins
+              </button>
+            </Link>
           </div>
         </div>
       </div>
