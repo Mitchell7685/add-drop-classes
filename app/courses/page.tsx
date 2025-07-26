@@ -1,9 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import CourseModal from '@/components/CourseModal';
 
 interface Course {
-  _id: string;
+  _id?: string;
   id: string;
   title: string;
   description: string;
@@ -12,12 +14,31 @@ interface Course {
   tags: string[];
 }
 
+interface User {
+  _id: string;
+  username: string;
+  full_name: string;
+  user_type: string;
+}
+
 export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const searchParams = useSearchParams();
+  const role = searchParams?.get('role');
 
   useEffect(() => {
+    // Check if user is logged in
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      setUser(JSON.parse(userData));
+    }
+    
     const fetchCourses = async () => {
       try {
         const response = await fetch('/api/courses');
@@ -35,6 +56,111 @@ export default function CoursesPage() {
 
     fetchCourses();
   }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    setUser(null);
+  };
+
+  const handleAddCourse = () => {
+    setEditingCourse(null);
+    setIsEditing(false);
+    setIsModalOpen(true);
+  };
+
+  const handleEditCourse = (course: Course) => {
+    setEditingCourse(course);
+    setIsEditing(true);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteCourse = async (courseId: string) => {
+    if (!confirm('Are you sure you want to delete this course?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/courses', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ courseId }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete course');
+      }
+
+      // Remove the course from the local state
+      setCourses(courses.filter(course => course._id !== courseId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    }
+  };
+
+  const handleCourseSubmit = async (courseData: Course) => {
+    try {
+      const method = isEditing ? 'PUT' : 'POST';
+      const body = isEditing 
+        ? JSON.stringify({ courseId: editingCourse?._id, ...courseData })
+        : JSON.stringify(courseData);
+
+      const response = await fetch('/api/courses', {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save course');
+      }
+
+      const data = await response.json();
+      
+      if (isEditing) {
+        // Update the course in the local state
+        setCourses(courses.map(course => 
+          course._id === editingCourse?._id ? data.course : course
+        ));
+      } else {
+        // Add the new course to the local state
+        setCourses([...courses, data.course]);
+      }
+
+      setIsModalOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      throw err; // Re-throw so the modal can handle it
+    }
+  };
+
+  const getPageTitle = () => {
+    if (!user) return 'Available Courses';
+    return user.user_type === 'teacher' ? 'My Courses - Teacher Dashboard' : 'Available Courses - Student Dashboard';
+  };
+
+  const getPageDescription = () => {
+    if (!user) return 'Browse and explore our course catalog';
+    return user.user_type === 'teacher' 
+      ? `Welcome back, ${user.full_name}! Manage your courses below.`
+      : `Welcome back, ${user.full_name}! Browse and enroll in courses below.`;
+  };
+
+  const getActionButtonText = (course: Course) => {
+    if (!user) return 'Login to Enroll';
+    return user.user_type === 'teacher' ? 'Manage Course' : 'Enroll in Course';
+  };
+
+  const getActionButtonStyle = (course: Course) => {
+    if (!user) return 'bg-[#a89984] hover:bg-[#bdae93] text-[#282828]';
+    return user.user_type === 'teacher' 
+      ? 'bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2]'
+      : 'bg-[#d79921] hover:bg-[#fabd2f] text-[#282828]';
+  };
 
   if (loading) {
     return (
@@ -65,14 +191,58 @@ export default function CoursesPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-[#fabd2f] mb-2">Available Courses</h1>
-            <p className="text-[#a89984]">Browse and explore our course catalog</p>
+            <h1 className="text-4xl font-bold text-[#fabd2f] mb-2">{getPageTitle()}</h1>
+            <p className="text-[#a89984]">{getPageDescription()}</p>
+            {user && (
+              <div className="mt-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  user.user_type === 'teacher' 
+                    ? 'bg-[#458588] text-[#ebdbb2]' 
+                    : 'bg-[#d79921] text-[#282828]'
+                }`}>
+                  {user.user_type.toUpperCase()}
+                </span>
+              </div>
+            )}
           </div>
-          <Link href="/">
-            <button className="bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2] font-semibold py-2 px-6 rounded-lg transition-colors duration-200">
-              Back to Home
-            </button>
-          </Link>
+          <div className="flex gap-3">
+            {user?.user_type === 'teacher' && (
+              <button
+                onClick={handleAddCourse}
+                className="bg-[#689d6a] hover:bg-[#98971a] text-[#282828] font-semibold py-2 px-6 rounded-lg transition-colors duration-200"
+              >
+                Add New Course
+              </button>
+            )}
+            {user ? (
+              <>
+                <button
+                  onClick={handleLogout}
+                  className="bg-[#fb4934] hover:bg-[#cc241d] text-[#ebdbb2] font-semibold py-2 px-6 rounded-lg transition-colors duration-200"
+                >
+                  Logout
+                </button>
+                <Link href="/">
+                  <button className="bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2] font-semibold py-2 px-6 rounded-lg transition-colors duration-200">
+                    Back to Home
+                  </button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/login">
+                  <button className="bg-[#d79921] hover:bg-[#fabd2f] text-[#282828] font-semibold py-2 px-6 rounded-lg transition-colors duration-200">
+                    Login
+                  </button>
+                </Link>
+                <Link href="/">
+                  <button className="bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2] font-semibold py-2 px-6 rounded-lg transition-colors duration-200">
+                    Back to Home
+                  </button>
+                </Link>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Courses Grid */}
@@ -131,14 +301,44 @@ export default function CoursesPage() {
                 )}
 
                 {/* Action Button */}
-                <button className="w-full bg-[#d79921] hover:bg-[#fabd2f]  text-[#282828] font-semibold py-2 px-4 rounded-lg transition-colors duration-200">
-                  Add Course
-                </button>
+                <div className="space-y-2">
+                  <button className={`w-full font-semibold py-2 px-4 rounded-lg transition-colors duration-200 ${getActionButtonStyle(course)}`}>
+                    {getActionButtonText(course)}
+                  </button>
+                  
+                  {/* Teacher Action Buttons */}
+                  {user?.user_type === 'teacher' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEditCourse(course)}
+                        className="flex-1 bg-[#b57614] hover:bg-[#d79921] text-[#282828] font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => course._id && handleDeleteCourse(course._id)}
+                        disabled={!course._id}
+                        className="flex-1 bg-[#cc241d] hover:bg-[#fb4934] text-[#ebdbb2] font-semibold py-2 px-4 rounded-lg transition-colors duration-200 disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Course Modal */}
+      <CourseModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCourseSubmit}
+        course={editingCourse}
+        isEditing={isEditing}
+      />
     </div>
   );
 }

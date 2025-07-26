@@ -2,15 +2,52 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log("Login attempt:", { email, password });
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+
+      // Store user data in localStorage (in a real app, use proper session management)
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      // Redirect based on user type
+      if (data.user.user_type === 'teacher') {
+        router.push('/courses?role=teacher');
+      } else if (data.user.user_type === 'student') {
+        router.push('/courses?role=student');
+      } else {
+        router.push('/courses');
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -29,20 +66,27 @@ export default function Login() {
 
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="bg-[#fb4934] bg-opacity-20 border border-[#fb4934] text-[#fb4934] px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+            
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-[#ebdbb2] mb-2">
                 Username
               </label>
               <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
+                disabled={loading}
                 className="w-full px-4 py-3 bg-[#282828] border border-[#504945] rounded-lg 
                          text-[#ebdbb2] placeholder-[#a89984] focus:outline-none 
                          focus:ring-2 focus:ring-[#458588] focus:border-transparent
-                         transition-colors duration-200"
+                         transition-colors duration-200 disabled:opacity-50"
                 placeholder="Enter your username"
               />
             </div>
@@ -57,10 +101,11 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={loading}
                 className="w-full px-4 py-3 bg-[#282828] border border-[#504945] rounded-lg 
                          text-[#ebdbb2] placeholder-[#a89984] focus:outline-none 
                          focus:ring-2 focus:ring-[#458588] focus:border-transparent
-                         transition-colors duration-200"
+                         transition-colors duration-200 disabled:opacity-50"
                 placeholder="Enter your password"
               />
             </div>
@@ -70,26 +115,28 @@ export default function Login() {
                 <input
                   id="remember-me"
                   type="checkbox"
+                  disabled={loading}
                   className="h-4 w-4 text-[#458588] bg-[#282828] border-[#504945] 
-                           rounded focus:ring-[#458588] focus:ring-2"
+                           rounded focus:ring-[#458588] focus:ring-2 disabled:opacity-50"
                 />
                 <label htmlFor="remember-me" className="ml-2 text-sm text-[#a89984]">
                   Remember me
                 </label>
               </div>
-              <a href="#" className="text-sm text-[#458588] hover:text-[#689d6a] transition-colors">
-                Forgot password?
-              </a>
+              <Link href="/test-users" className="text-sm text-[#458588] hover:text-[#689d6a] transition-colors">
+                View test users
+              </Link>
             </div>
 
             <button
               type="submit"
+              disabled={loading}
               className="w-full bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2] 
                        font-semibold py-3 px-4 rounded-lg transition-colors duration-200
                        focus:outline-none focus:ring-2 focus:ring-[#458588] focus:ring-offset-2
-                       focus:ring-offset-[#3c3836]"
+                       focus:ring-offset-[#3c3836] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Sign In
+              {loading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
           {/* Back to Home */}
