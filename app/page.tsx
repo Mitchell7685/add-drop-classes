@@ -8,6 +8,7 @@ interface User {
   username: string;
   full_name: string;
   user_type: string;
+  enrolled_courses?: string[];
 }
 
 export default function Home() {

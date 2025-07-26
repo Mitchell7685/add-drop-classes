@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import CourseModal from '@/components/CourseModal';
+import Toast from '@/components/Toast';
 
 interface Course {
   _id?: string;
@@ -19,6 +20,7 @@ interface User {
   username: string;
   full_name: string;
   user_type: string;
+  enrolled_courses?: string[];
 }
 
 export default function CoursesPage() {
@@ -29,6 +31,7 @@ export default function CoursesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const searchParams = useSearchParams();
   const role = searchParams?.get('role');
 
@@ -138,6 +141,54 @@ export default function CoursesPage() {
     }
   };
 
+  const handleEnrollment = async (course: Course, action: 'enroll' | 'unenroll') => {
+    if (!user || !course.id) {
+      setToast({
+        message: 'User must be logged in and course must have an ID',
+        type: 'error'
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          userId: user._id,
+          courseId: course.id
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to ${action} in course`);
+      }
+
+      const data = await response.json();
+      
+      // Update user data in localStorage and state
+      const updatedUser = data.user;
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+
+      // Show success message
+      setToast({
+        message: `Successfully ${action === 'enroll' ? 'enrolled in' : 'unenrolled from'} ${course.title}`,
+        type: 'success'
+      });
+      
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'An error occurred',
+        type: 'error'
+      });
+    }
+  };
+
   const getPageTitle = () => {
     if (!user) return 'Available Courses';
     return user.user_type === 'teacher' ? 'My Courses - Teacher Dashboard' : 'Available Courses - Student Dashboard';
@@ -152,14 +203,40 @@ export default function CoursesPage() {
 
   const getActionButtonText = (course: Course) => {
     if (!user) return 'Login to Enroll';
-    return user.user_type === 'teacher' ? 'Manage Course' : 'Enroll in Course';
+    if (user.user_type === 'teacher') return 'Manage Course';
+    
+    // Check if student is enrolled
+    const isEnrolled = user.enrolled_courses?.includes(course.id);
+    return isEnrolled ? 'Unenroll from Course' : 'Enroll in Course';
   };
 
   const getActionButtonStyle = (course: Course) => {
     if (!user) return 'bg-[#a89984] hover:bg-[#bdae93] text-[#282828]';
-    return user.user_type === 'teacher' 
-      ? 'bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2]'
+    if (user.user_type === 'teacher') {
+      return 'bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2]';
+    }
+    
+    // Different styles for enrolled vs not enrolled
+    const isEnrolled = user.enrolled_courses?.includes(course.id);
+    return isEnrolled 
+      ? 'bg-[#cc241d] hover:bg-[#fb4934] text-[#ebdbb2]'
       : 'bg-[#d79921] hover:bg-[#fabd2f] text-[#282828]';
+  };
+
+  const handleActionButtonClick = (course: Course) => {
+    if (!user) {
+      // Redirect to login
+      return;
+    }
+    
+    if (user.user_type === 'teacher') {
+      // Teacher management functionality (if needed)
+      return;
+    }
+    
+    // Handle student enrollment/unenrollment
+    const isEnrolled = user.enrolled_courses?.includes(course.id);
+    handleEnrollment(course, isEnrolled ? 'unenroll' : 'enroll');
   };
 
   if (loading) {
@@ -259,9 +336,16 @@ export default function CoursesPage() {
                 className="bg-[#3c3836] border border-[#504945] rounded-lg p-6 hover:border-[#689d6a] transition-colors duration-200"
               >
                 {/* Course Title */}
-                <h2 className="text-xl font-semibold text-[#fabd2f] mb-3 line-clamp-2">
-                  {course.title}
-                </h2>
+                <div className="flex items-start justify-between mb-3">
+                  <h2 className="text-xl font-semibold text-[#fabd2f] line-clamp-2 flex-1">
+                    {course.title}
+                  </h2>
+                  {user?.user_type === 'student' && user.enrolled_courses?.includes(course.id) && (
+                    <span className="bg-[#689d6a] text-[#282828] text-xs px-2 py-1 rounded-full font-medium ml-2 flex-shrink-0">
+                      Enrolled
+                    </span>
+                  )}
+                </div>
 
                 {/* Course Description */}
                 <p className="text-[#bdae93] mb-4 line-clamp-3 text-sm">
@@ -302,7 +386,10 @@ export default function CoursesPage() {
 
                 {/* Action Button */}
                 <div className="space-y-2">
-                  <button className={`w-full font-semibold py-2 px-4 rounded-lg transition-colors duration-200 ${getActionButtonStyle(course)}`}>
+                  <button 
+                    onClick={() => handleActionButtonClick(course)}
+                    className={`w-full font-semibold py-2 px-4 rounded-lg transition-colors duration-200 ${getActionButtonStyle(course)}`}
+                  >
                     {getActionButtonText(course)}
                   </button>
                   
@@ -339,6 +426,15 @@ export default function CoursesPage() {
         course={editingCourse}
         isEditing={isEditing}
       />
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
