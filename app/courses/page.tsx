@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import CourseModal from '@/components/CourseModal';
 import Toast from '@/components/Toast';
+import ShoppingCart from '@/components/ShoppingCart';
 
 interface Course {
   _id?: string;
@@ -21,6 +22,7 @@ interface User {
   full_name: string;
   user_type: string;
   enrolled_courses?: string[];
+  cart?: string[];
 }
 
 // Component that uses useSearchParams
@@ -33,6 +35,7 @@ function CoursesContent() {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const searchParams = useSearchParams();
   const role = searchParams?.get('role');
 
@@ -190,6 +193,62 @@ function CoursesContent() {
     }
   };
 
+  const handleCartAction = async (course: Course, action: 'addToCart' | 'removeFromCart') => {
+    if (!user || !course.id) {
+      setToast({
+        message: 'User must be logged in and course must have an ID',
+        type: 'error'
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          userId: user._id,
+          courseId: course.id
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to ${action}`);
+      }
+
+      const data = await response.json();
+      
+      // Update user data in localStorage and state
+      const updatedUser = data.user;
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+
+      // Show success message
+      setToast({
+        message: action === 'addToCart' ? `Added ${course.title} to cart` : `Removed ${course.title} from cart`,
+        type: 'success'
+      });
+      
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'An error occurred',
+        type: 'error'
+      });
+    }
+  };
+
+  const handleUserUpdate = (updatedUser: User) => {
+    setUser(updatedUser);
+  };
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+  };
+
   const getPageTitle = () => {
     if (!user) return 'Available Courses';
     return user.user_type === 'teacher' ? 'My Courses - Teacher Dashboard' : 'Available Courses - Student Dashboard';
@@ -206,9 +265,13 @@ function CoursesContent() {
     if (!user) return 'Login to Enroll';
     if (user.user_type === 'teacher') return 'Manage Course';
     
-    // Check if student is enrolled
+    // Check if student is enrolled or in cart
     const isEnrolled = user.enrolled_courses?.includes(course.id);
-    return isEnrolled ? 'Unenroll from Course' : 'Enroll in Course';
+    const isInCart = user.cart?.includes(course.id);
+    
+    if (isEnrolled) return 'Unenroll from Course';
+    if (isInCart) return 'Remove from Cart';
+    return 'Add to Cart';
   };
 
   const getActionButtonStyle = (course: Course) => {
@@ -217,11 +280,13 @@ function CoursesContent() {
       return 'bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2]';
     }
     
-    // Different styles for enrolled vs not enrolled
+    // Different styles for enrolled, in cart, or available
     const isEnrolled = user.enrolled_courses?.includes(course.id);
-    return isEnrolled 
-      ? 'bg-[#cc241d] hover:bg-[#fb4934] text-[#ebdbb2]'
-      : 'bg-[#d79921] hover:bg-[#fabd2f] text-[#282828]';
+    const isInCart = user.cart?.includes(course.id);
+    
+    if (isEnrolled) return 'bg-[#cc241d] hover:bg-[#fb4934] text-[#ebdbb2]';
+    if (isInCart) return 'bg-[#b57614] hover:bg-[#d79921] text-[#282828]';
+    return 'bg-[#689d6a] hover:bg-[#98971a] text-[#282828]';
   };
 
   const handleActionButtonClick = (course: Course) => {
@@ -235,9 +300,17 @@ function CoursesContent() {
       return;
     }
     
-    // Handle student enrollment/unenrollment
+    // Handle student enrollment/cart actions
     const isEnrolled = user.enrolled_courses?.includes(course.id);
-    handleEnrollment(course, isEnrolled ? 'unenroll' : 'enroll');
+    const isInCart = user.cart?.includes(course.id);
+    
+    if (isEnrolled) {
+      handleEnrollment(course, 'unenroll');
+    } else if (isInCart) {
+      handleCartAction(course, 'removeFromCart');
+    } else {
+      handleCartAction(course, 'addToCart');
+    }
   };
 
   if (loading) {
@@ -284,6 +357,26 @@ function CoursesContent() {
             )}
           </div>
           <div className="flex gap-3">
+            {user?.user_type === 'student' && (
+              <>
+                <Link href="/my-courses">
+                  <button className="bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2] font-semibold py-2 px-6 rounded-lg transition-colors duration-200">
+                    My Enrolled Courses
+                  </button>
+                </Link>
+                <button
+                  onClick={() => setIsCartOpen(true)}
+                  className="bg-[#d79921] hover:bg-[#fabd2f] text-[#282828] font-semibold py-2 px-6 rounded-lg transition-colors duration-200 relative"
+                >
+                  Cart ({user.cart?.length || 0})
+                  {user.cart && user.cart.length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-[#fb4934] text-[#ebdbb2] text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                      {user.cart.length}
+                    </span>
+                  )}
+                </button>
+              </>
+            )}
             {user?.user_type === 'teacher' && (
               <button
                 onClick={handleAddCourse}
@@ -341,11 +434,18 @@ function CoursesContent() {
                   <h2 className="text-xl font-semibold text-[#fabd2f] line-clamp-2 flex-1">
                     {course.title}
                   </h2>
-                  {user?.user_type === 'student' && user.enrolled_courses?.includes(course.id) && (
-                    <span className="bg-[#689d6a] text-[#282828] text-xs px-2 py-1 rounded-full font-medium ml-2 flex-shrink-0">
-                      Enrolled
-                    </span>
-                  )}
+                  <div className="flex flex-col gap-1 ml-2 flex-shrink-0">
+                    {user?.user_type === 'student' && user.enrolled_courses?.includes(course.id) && (
+                      <span className="bg-[#689d6a] text-[#282828] text-xs px-2 py-1 rounded-full font-medium">
+                        Enrolled
+                      </span>
+                    )}
+                    {user?.user_type === 'student' && user.cart?.includes(course.id) && (
+                      <span className="bg-[#d79921] text-[#282828] text-xs px-2 py-1 rounded-full font-medium">
+                        In Cart
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Course Description */}
@@ -394,6 +494,16 @@ function CoursesContent() {
                     {getActionButtonText(course)}
                   </button>
                   
+                  {/* Secondary Action for Cart Items */}
+                  {user?.user_type === 'student' && user.cart?.includes(course.id) && (
+                    <button 
+                      onClick={() => handleEnrollment(course, 'enroll')}
+                      className="w-full bg-[#458588] hover:bg-[#689d6a] text-[#ebdbb2] font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+                    >
+                      Enroll Now
+                    </button>
+                  )}
+                  
                   {/* Teacher Action Buttons */}
                   {user?.user_type === 'teacher' && (
                     <div className="flex gap-2">
@@ -427,6 +537,18 @@ function CoursesContent() {
         course={editingCourse}
         isEditing={isEditing}
       />
+
+      {/* Shopping Cart */}
+      {user?.user_type === 'student' && (
+        <ShoppingCart
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          user={user}
+          courses={courses}
+          onUserUpdate={handleUserUpdate}
+          onToast={showToast}
+        />
+      )}
 
       {/* Toast Notification */}
       {toast && (

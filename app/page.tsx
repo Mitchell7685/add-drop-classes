@@ -67,6 +67,14 @@ export default function Home() {
                   </button>
                 </Link>
                 
+                {user.user_type === 'student' && (
+                  <Link href="/my-courses">
+                    <button className="bg-[#689d6a] hover:bg-[#98971a] text-[#282828] font-semibold py-3 px-8 rounded-lg transition-colors duration-200 min-w-[150px]">
+                      My Enrolled Courses
+                    </button>
+                  </Link>
+                )}
+                
                 <button
                   onClick={handleLogout}
                   className="bg-[#fb4934] hover:bg-[#cc241d] text-[#ebdbb2] font-semibold py-3 px-8 rounded-lg transition-colors duration-200 min-w-[150px]"
